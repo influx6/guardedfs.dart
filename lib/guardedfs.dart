@@ -258,6 +258,7 @@ class GuardedDirectory{
 
 	bool get isWritable => this.writable.on();
 
+	String get path => this.d.path;
 }
 
 
