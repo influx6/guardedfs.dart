@@ -107,7 +107,7 @@ class GuardedFile{
 		return this.f.writeAsBytesSync(bytes,mode: Hub.switchUnless(mode, FileMode.WRITE));
 	}
 
-  dynamic appendAsBytesSync(List<int> bytes){
+  	dynamic appendAsBytesSync(List<int> bytes){
 	    return this.writeAsBytesSync(bytes, FileMode.APPEND);
 	}
 	 
@@ -136,6 +136,8 @@ class GuardedFile{
 	dynamic statSync(){
 		return this.f.statSync();
 	}
+
+	String get path => this.f.path;
 
 	dynamic get lastModified => this.f.lastModified();
 	dynamic get lastModifiedSync => this.f.lastModifiedSync();
@@ -271,6 +273,7 @@ class GuardedFS{
 	}
 
 	dynamic File(String path){
+		if(this.cache.storage.length > 100) this.cache.flush();
 		var dir = this.cache.get(path);
 		if(dir != null && dir is GuardedFile) return dir; 
 		dir = this.dir.File(path);
@@ -279,6 +282,7 @@ class GuardedFS{
 	}
 
 	dynamic Dir(String path,[bool rec]){
+		if(this.cache.storage.length > 100) this.cache.flush();
 		var dir = this.cache.get(path);
 		if(dir != null && dir is GuardedDirectory) return dir; 
 		dir = this.dir.createNewDir(path,rec);
