@@ -15,6 +15,7 @@ void main(){
 	cur.directoryListsAsString().then((_){
 	  _.whenClosed((j){ print('closed!'); });
 	  _.on((n){
+	    print(n);
       assert(n is String);
 	  });
 	});

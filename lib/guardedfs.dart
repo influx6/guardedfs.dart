@@ -69,7 +69,7 @@ class GuardedFile{
 	}
 
 	Future readAsString([Encoding enc]){
-		return this.f.readAsString(encoding: enc);
+		return this.f.readAsString(encoding: Hub.switchUnless(enc, UTF8));
 	}
 
 	dynamic readAsStringSync([Encoding enc]){
@@ -147,6 +147,7 @@ class GuardedFile{
 	dynamic get lengthSync => this.f.lengthSync();
 
 	bool get isWritable => this.writable.on();
+	bool get isFile => true;
 }
 
 class GuardedDirectory{
@@ -264,6 +265,8 @@ class GuardedDirectory{
 	bool get isWritable => this.writable.on();
 
 	String get path => this.d.path;
+
+	bool get isDirectory => true;
 }
 
 
@@ -311,4 +314,7 @@ class GuardedFS{
        return _.directoryListsAsString(rec,ff);
     });	
   }
+	
+	bool get isWritable => this.dir.isWritable;
+	
 }
