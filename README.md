@@ -8,7 +8,7 @@ directly from the guardedfs objects,its a choice to follow the rules not a stric
 ##Example
 	
 	##code from test/guarded.dart
-	
+
 	library guardedfs.specs;
 
 	import 'package:guardedfs/guardedfs.dart';
@@ -35,7 +35,7 @@ directly from the guardedfs objects,its a choice to follow the rules not a stric
 	    });
 	  });
 		
-		//assert cur can write to any file in the directory
+		//assert cur cant write to any file in the directory
 		assert(cur.File('test/data.txt').openWrite() == null);
 		//assert cur can append to this directory
 		assert(mod.File('test/data.txt').openAppend() != null);
