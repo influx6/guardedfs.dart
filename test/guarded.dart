@@ -13,6 +13,7 @@ void main(){
 	
 	//grab list of directory as strings not filesystementities
 	cur.directoryListsAsString().then((_){
+	  _.whenClosed((j){ print('closed!'); });
 	  _.on((n){
       assert(n is String);
 	  });

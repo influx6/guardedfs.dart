@@ -192,7 +192,9 @@ class GuardedDirectory{
 	    var transformed = sm.Streamable.create();
 	    var fn = Hub.switchUnless(transform, (_){ return _; }); 
 	    transformed.transformer.on((n){ return n.path; });
-	    this.list(rec,ff).listen(transformed.emit,onDone:(){ transformed.close(); });
+	    this.list(rec,ff).listen(transformed.emit,onDone:(){ 
+	    	transformed.end(); 
+	    });
 	    return transformed;
 	}
 	 
