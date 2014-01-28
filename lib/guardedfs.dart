@@ -284,7 +284,7 @@ class GuardedFS{
 	dynamic File(String path){
 		if(this.cache.storage.length > 100) this.cache.flush();
 		var dir = this.cache.get(path);
-		if(dir != null && dir is GuardedFile) return dir; 
+		if(dir != null && dir is GuardedFile) return new Future.value(dir); 
 		dir = this.dir.File(path);
 		this.cache.add(path,dir);
 		return dir;
