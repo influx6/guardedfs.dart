@@ -24,6 +24,12 @@ void main(){
     _.directoryListsAsString().on((n){
       assert(n is String);
     });
+
+    _.linkTo('./thanklib').then((_){
+    	print('made: $_');
+    	_.deleteSync();
+    }).catchError(print);
+
   });
 	
 	//assert cur can write to any file in the directory
@@ -38,11 +44,14 @@ void main(){
 	});
 
 	var locker = mod.File('test/suggest/locker.txt');
-	
+	locker.copyTo('./thunder.clap').then((n){
+   assert(GuardedFile.existsSync());
+  });
+
 	assert(locker.openWrite() != null);
 	
 	locker.writeAsStringSync('guardedfs');
 	assert(locker.readAsStringSync() == 'guardedfs');
 	
-	
+	mod.fsCheck('buker').catchError((n){ assert(n is FileSystemException); });
 }
