@@ -12,11 +12,12 @@ class GuardedFile{
 	File f;
 
 	static create(n,m) => new GuardedFile(path:n,readonly:m);
+        static use(n,m) => new GuardedFile.openFile(path:n,readonly:m);
 
-  static Future isFilePath(String path){
-    if(FileSystemEntity.typeSync(path) != FileSystemEntityType.File) return new Future.error(new FileSystemException('NOT A File!',path));
-    return new Future.value(path);
-  }
+        static Future isFilePath(String path){
+          if(FileSystemEntity.typeSync(path) != FileSystemEntityType.File) return new Future.error(new FileSystemException('NOT A File!',path));
+          return new Future.value(path);
+        }
 
 	GuardedFile({String path, bool readonly: false}){
 		this.options = new MapDecorator.from({'readonly': readonly, 'path':path});
@@ -25,6 +26,15 @@ class GuardedFile{
 		if(!readonly) this.writable.switchOn();
 	}
   
+	GuardedFile.openFile({String path, bool readonly: false}){
+                if(Valids.exist(path)){
+                  this.f = new File(path);
+                  if(!this.f.existsSync()) throw new FileSystemException("$path does not exist!",path);
+                  this.options = new MapDecorator.from({'readonly': readonly, 'path':path});
+                  this.writable = Switch.create();
+                  if(!readonly) this.writable.switchOn();
+                }
+	}
 
 	Future fsCheck(){
 		var real = this.options.get('path');
@@ -32,19 +42,19 @@ class GuardedFile{
 		return new Future.value(real);
 	}
 	
-  Future copyTo(String path){
-    path = paths.normalize(path);
-    var file = new Completer();
-    GuardedFS.pathExists(path).then((n){
-      return  file.complete(GuardedFile.create(n,true));
-    }).catchError((n){
-      var f = GuardedFile.create(path,false);
-      this.readAsString().then(f.writeAsString);
-      file.complete(f);
-    });
+        Future copyTo(String path){
+          path = paths.normalize(path);
+          var file = new Completer();
+          GuardedFS.pathExists(path).then((n){
+            return  file.complete(GuardedFile.create(n,true));
+          }).catchError((n){
+            var f = GuardedFile.create(path,false);
+            this.readAsString().then(f.writeAsString);
+            file.complete(f);
+          });
 
-    return file.future;
-  }
+          return file.future;
+        }
 
 	Future linkTo(String path){
 		if(this.links.has(path)) return this.link.get(path);
@@ -212,13 +222,25 @@ class GuardedDirectory{
 	dynamic dm;
   
 	static create(n,m) => new GuardedDirectory(path:n,readonly:m);
+	static use(n,m) => new GuardedDirectory.openDir(path:n,readonly:m);
 	
 	GuardedDirectory({String path, bool readonly: false}){
-    	this.options = new MapDecorator.from({'readonly':readonly, 'path':path});
-    	this.links = new MapDecorator();
-		this.d = new Directory(this.options.get('path'));
-		this.writable = Switch.create();
-		if(!readonly) this.writable.switchOn();
+            this.options = new MapDecorator.from({'readonly':readonly, 'path':path});
+            this.links = new MapDecorator();
+            this.d = new Directory(this.options.get('path'));
+            this.writable = Switch.create();
+            if(!readonly) this.writable.switchOn();
+	}
+
+	GuardedDirectory openDir({String path, bool readonly: false}){
+            if(Valids.exist(path)){
+              this.d = new Directory(path);
+              if(Valids.not(this.d.existsSync())) throw new FileSystemException('$path does not exist!',path);
+              this.options = new MapDecorator.from({'readonly':readonly, 'path':path});
+              this.links = new MapDecorator();
+              this.writable = Switch.create();
+              if(!readonly) this.writable.switchOn();
+            }
 	}
 
 	Future fsCheck(String path){
@@ -363,58 +385,62 @@ class GuardedFS{
   final cache = Hub.createMapDecorator();
   GuardedDirectory dir;
 
+  static Future pathExists(String path){
+          if(FileSystemEntity.typeSync(path) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',path));
+          return new Future.value(path);
+  }
 
-	static Future pathExists(String path){
-		if(FileSystemEntity.typeSync(path) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',path));
-		return new Future.value(path);
-	}
+  static create(p,r) => new GuardedFS(p,r);
+  static use(p,r) => new GuardedFS.useFs(p,r);
+  
+  GuardedFS(String path,bool readonly){
+      this.dir = GuardedDirectory.create(path,readonly);
+  }
 
-  	static create(p,r) => new GuardedFS(p,r);
-  	
-	GuardedFS(String path,bool readonly){
-		this.dir = GuardedDirectory.create(path,readonly);
-	}
+  GuardedFS useFs(String path,bool readonly){
+    this.dir = GuardedDirectory.use(path,readonly);
+  }
 
-	Future fsCheck(String path){
-		var real = paths.join(this.dir.path,path);
-		if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',real));
-		return new Future.value(real);
-	}
-	
-	dynamic File(String path){
-		if(this.cache.storage.length > 100) this.cache.flush();
-		var dira = this.cache.get(path);
-		if(dira != null && dira is GuardedFile) return dira; 
-		dira = this.dir.File(path);
-		this.cache.add(path,dira);
-		return dira;
-	}
+  Future fsCheck(String path){
+    var real = paths.join(this.dir.path,path);
+    if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',real));
+    return new Future.value(real);
+  }
+  
+  dynamic File(String path){
+    if(this.cache.storage.length > 100) this.cache.flush();
+    var dira = this.cache.get(path);
+    if(dira != null && dira is GuardedFile) return dira; 
+    dira = this.dir.File(path);
+    this.cache.add(path,dira);
+    return dira;
+  }
 
-	dynamic Dir(String path,[bool rec]){
-		if(this.cache.storage.length > 100) this.cache.flush();
-		var dira = this.cache.get(path);
-		if(dira != null && dira is GuardedDirectory) return new Future.value(dira); 
-		dira = this.dir.createNewDir(path,rec);
-		return dira.then((_){
-		   this.cache.add(path,_);
-		   return _; 
-		});
-	}
+  dynamic Dir(String path,[bool rec]){
+    if(this.cache.storage.length > 100) this.cache.flush();
+    var dira = this.cache.get(path);
+    if(dira != null && dira is GuardedDirectory) return new Future.value(dira); 
+    dira = this.dir.createNewDir(path,rec);
+    return dira.then((_){
+       this.cache.add(path,_);
+       return _; 
+    });
+  }
 
-	dynamic directoryLists([String path,Function transform, bool rec,bool ff]){
-	  var dir = (path != null ? this.Dir(path,rec) : new Future.value(this.dir));
-	  return dir.then((_){
-	     return _.directoryLists(transform,rec,ff);
-	  });
-	}
+  dynamic directoryLists([String path,Function transform, bool rec,bool ff]){
+    var dir = (path != null ? this.Dir(path,rec) : new Future.value(this.dir));
+    return dir.then((_){
+       return _.directoryLists(transform,rec,ff);
+    });
+  }
 
-	dynamic directoryListsAsString([String path, bool rec,bool ff]){
+  dynamic directoryListsAsString([String path, bool rec,bool ff]){
     var dir = (path != null ? this.Dir(path,rec) : new Future.value(this.dir));
     return dir.then((_){
        return _.directoryListsAsString(rec,ff);
     });	
   }
 	
-	bool get isWritable => this.dir.isWritable;
+  bool get isWritable => this.dir.isWritable;
 	
 }
