@@ -5,32 +5,34 @@ import 'package:hub/hub.dart';
 import 'package:path/path.dart' as paths;
 import 'package:streamable/streamable.dart' as sm;
 
+export 'package:path/path.dart';
+
 class GuardedFile{
 	MapDecorator links = new MapDecorator();
 	MapDecorator options;
 	Switch writable;
 	File f;
 
-	static create(n,m) => new GuardedFile(path:n,readonly:m);
-        static use(n,m) => new GuardedFile.openFile(path:n,readonly:m);
+	static create(n,m,[l]) => new GuardedFile(path:n,readonly:m, lockRoot: l);
+        static use(n,m,[l]) => new GuardedFile.openFile(path:n,readonly:m,lockRoot:l);
 
         static Future isFilePath(String path){
           if(FileSystemEntity.typeSync(path) != FileSystemEntityType.File) return new Future.error(new FileSystemException('NOT A File!',path));
           return new Future.value(path);
         }
 
-	GuardedFile({String path, bool readonly: false}){
-		this.options = new MapDecorator.from({'readonly': readonly, 'path':path});
+	GuardedFile({String path, bool readonly: false, lockRoot: false}){
+		this.options = new MapDecorator.from({'readonly': readonly, 'path':path, 'lockRoot': lockRoot});
 		this.f = new File(this.options.get('path'));
 		this.writable = Switch.create();
 		if(!readonly) this.writable.switchOn();
 	}
   
-	GuardedFile.openFile({String path, bool readonly: false}){
+	GuardedFile.openFile({String path, bool readonly: false, lockRoot: false}){
                 if(Valids.exist(path)){
                   this.f = new File(path);
                   if(!this.f.existsSync()) throw new FileSystemException("$path does not exist!",path);
-                  this.options = new MapDecorator.from({'readonly': readonly, 'path':path});
+                  this.options = new MapDecorator.from({'readonly': readonly, 'path':path, lockRoot: lockRoot});
                   this.writable = Switch.create();
                   if(!readonly) this.writable.switchOn();
                 }
@@ -218,30 +220,41 @@ class GuardedDirectory{
 	MapDecorator options;
 	MapDecorator links;
 	Switch writable;
+	Switch rootlocked;
 	Directory d;
 	dynamic dm;
   
-	static create(n,m) => new GuardedDirectory(path:n,readonly:m);
-	static use(n,m) => new GuardedDirectory.openDir(path:n,readonly:m);
+	static create(n,m,[l]) => new GuardedDirectory(path:n,readonly:m,lockRoot:l);
+	static use(n,m,[l]) => new GuardedDirectory.openDir(path:n,readonly:m, lockRoot:l);
 	
-	GuardedDirectory({String path, bool readonly: false}){
-            this.options = new MapDecorator.from({'readonly':readonly, 'path':path});
-            this.links = new MapDecorator();
-            this.d = new Directory(this.options.get('path'));
-            this.writable = Switch.create();
-            if(!readonly) this.writable.switchOn();
+	GuardedDirectory({String path, bool readonly: false,bool lockRoot: false}){
+          if(!Valids.exist(path)) throw "path must be specified";
+          this.d = new Directory(path);
+          this._init(readonly,path,lockRoot);
 	}
 
-	GuardedDirectory openDir({String path, bool readonly: false}){
-            if(Valids.exist(path)){
-              this.d = new Directory(path);
-              if(Valids.not(this.d.existsSync())) throw new FileSystemException('$path does not exist!',path);
-              this.options = new MapDecorator.from({'readonly':readonly, 'path':path});
-              this.links = new MapDecorator();
-              this.writable = Switch.create();
-              if(!readonly) this.writable.switchOn();
-            }
+	GuardedDirectory openDir({String path, bool readonly: false, bool lockRoot:false}){
+          if(!Valids.exist(path)) throw "path must be specified";
+          this.d = new Directory(path);
+          if(Valids.not(this.d.existsSync())) throw new FileSystemException('$path does not exist!',path);
+          this._init(readonly,path,lockRoot);
 	}
+
+        void _init(readonly,path,lockRoot){
+          this.options = new MapDecorator.from({'readonly':readonly, 'path':path,'lockRoot': lockRoot});
+          this.links = new MapDecorator();
+          this.writable = Switch.create();
+          this.rootlocked = Switch.create();
+          if(!readonly) this.writable.switchOn();
+          if(lockRoot) this.rootlocked.switchOn();
+        }
+
+        void checkLock(String path){
+          if(this.rootlocked.on()){
+            if(paths.isWithin(this.options.get('path'),path)) return true;
+            throw new FileSystemException("Directory is locked and cant move out of current root directory!");
+          }
+        }
 
 	Future fsCheck(String path){
 		var real = paths.join(this.options.get('path'),path);
@@ -288,6 +301,7 @@ class GuardedDirectory{
 	  
 	dynamic File(String path){
 	    var root = paths.join(this.options.get('path'),path);
+            this.checkLock(root);
 	    return GuardedFile.create(root, this.options.get('readonly'));
 	}
   
@@ -310,7 +324,7 @@ class GuardedDirectory{
 	}
 	 
   	sm.Streamable directoryListsAsString([bool rec,bool ff]){
-    return this.directoryLists((o){ return o.path;},rec,ff); 
+          return this.directoryLists((o){ return o.path;},rec,ff); 
   	}
   
 	Future rename(String name){
@@ -325,25 +339,27 @@ class GuardedDirectory{
 
 	Future createNewDir(String name,[bool r]){
 	    var root = paths.join(this.options.get('path'),name);
-    	var dir = GuardedDirectory.create(root,this.options.get('readonly'));
-    	return dir.createDir(r).then((j){ return dir; });
+            this.checkLock(root);
+            var dir = GuardedDirectory.create(root,this.options.get('readonly'));
+            return dir.createDir(r).then((j){ return dir; });
 	}
 
 	dynamic createNewDirSync(String name,[bool r]){
 	    var root = paths.join(this.options.get('path'),name);
-		var dir = GuardedDirectory.create(root,this.options.get('readonly'));
-		dir.createDirSync(r);
-		return dir;
+            this.checkLock(root);
+            var dir = GuardedDirectory.create(root,this.options.get('readonly'));
+            dir.createDirSync(r);
+            return dir;
 	}
 
 	Future createTemp(String name){
-		if(!this.writable.on()) return null;
-		return this.d.createTemp(name);
+            if(!this.writable.on()) return null;
+            return this.d.createTemp(name);
 	}
 
 	dynamic createTempSync(String name){
-		if(!this.writable.on()) return null;
-		return this.d.createTempSync(name);
+            if(!this.writable.on()) return null;
+            return this.d.createTempSync(name);
 	}
 
 	Future delete([bool r]){
@@ -386,19 +402,21 @@ class GuardedFS{
   GuardedDirectory dir;
 
   static Future pathExists(String path){
-          if(FileSystemEntity.typeSync(path) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',path));
-          return new Future.value(path);
+      if(FileSystemEntity.typeSync(path) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',path));
+      return new Future.value(path);
   }
 
-  static create(p,r) => new GuardedFS(p,r);
-  static use(p,r) => new GuardedFS.useFs(p,r);
+  static create(p,r,[l]) => new GuardedFS(p,r,l);
+  static use(p,r,[l]) => new GuardedFS.useFs(p,r,l);
   
-  GuardedFS(String path,bool readonly){
-      this.dir = GuardedDirectory.create(path,readonly);
+  GuardedFS(String path,bool readonly,bool lock){
+    lock = Funcs.switchUnless(lock,false);
+    this.dir = GuardedDirectory.create(path,readonly,lock);
   }
 
-  GuardedFS useFs(String path,bool readonly){
-    this.dir = GuardedDirectory.use(path,readonly);
+  GuardedFS useFs(String path,bool readonly,bool lock){
+    lock = Funcs.switchUnless(lock,false);
+    this.dir = GuardedDirectory.use(path,readonly,lock);
   }
 
   Future fsCheck(String path){
