@@ -7,6 +7,10 @@ import 'package:streamable/streamable.dart' as sm;
 
 export 'package:path/path.dart';
 
+class FileNotFound extends FileSystemException{
+    FileNotFound(String msg,[path]): super(msg,path);
+}
+
 class GuardedFile{
 	MapDecorator links = new MapDecorator();
 	MapDecorator options;
@@ -17,7 +21,7 @@ class GuardedFile{
         static use(n,m,[l]) => new GuardedFile.openFile(path:n,readonly:m,lockRoot:l);
 
         static Future isFilePath(String path){
-          if(FileSystemEntity.typeSync(path) != FileSystemEntityType.File) return new Future.error(new FileSystemException('NOT A File!',path));
+          if(FileSystemEntity.typeSync(path) != FileSystemEntityType.File) return new Future.error(new FileSystemExeption('NOT A File!',path));
           return new Future.value(path);
         }
 
@@ -31,7 +35,7 @@ class GuardedFile{
 	GuardedFile.openFile({String path, bool readonly: false, lockRoot: false}){
                 if(Valids.exist(path)){
                   this.f = new File(path);
-                  if(!this.f.existsSync()) throw new FileSystemException("$path does not exist!",path);
+                  if(!this.f.existsSync()) throw new FileNotFound("$path does not exist!",path);
                   this.options = new MapDecorator.from({'readonly': readonly, 'path':path, lockRoot: lockRoot});
                   this.writable = Switch.create();
                   if(!readonly) this.writable.switchOn();
@@ -40,7 +44,7 @@ class GuardedFile{
 
 	Future fsCheck(){
 		var real = this.options.get('path');
-		if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',real));
+		if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileNotFound('NOT FOUND!',real));
 		return new Future.value(real);
 	}
 	
@@ -236,7 +240,7 @@ class GuardedDirectory{
 	GuardedDirectory openDir({String path, bool readonly: false, bool lockRoot:false}){
           if(!Valids.exist(path)) throw "path must be specified";
           this.d = new Directory(path);
-          if(Valids.not(this.d.existsSync())) throw new FileSystemException('$path does not exist!',path);
+          if(Valids.not(this.d.existsSync())) throw new FileNotFound('$path does not exist!',path);
           this._init(readonly,path,lockRoot);
 	}
 
@@ -249,6 +253,61 @@ class GuardedDirectory{
           if(lockRoot) this.rootlocked.switchOn();
         }
 
+	dynamic createDirSync([bool f]){
+	    if(!this.writable.on() && !this.d.existsSync()) return this;
+	    this.d.create(recursive: Hub.switchUnless(f, true));
+	    return this;
+	}
+	  
+	Future createDir([bool f]){
+	    if(!this.writable.on() && !this.d.existsSync()) return new Future.value(this);
+	    return this.d.create(recursive:  Hub.switchUnless(f, true)).then((_){ return this; });
+	}
+
+	Future openNewDir(String name,[bool r]){
+            return new Future((){
+              var root = paths.join(this.options.get('path'),name);
+              this.checkLock(root);
+              var dir = new GuardedDirectory.openDir(path:root,readonly:this.options.get('readonly'));
+              return dir.createDir(r).then((j){ return dir; });
+            });
+	}
+
+	dynamic openNewDirSync(String name,[bool r]){
+	    var root = paths.join(this.options.get('path'),name);
+            this.checkLock(root);
+            var dir = new GuardedDirectory.openDir(path:root,readonly:this.options.get('readonly'));
+            dir.createDirSync(r);
+            return dir;
+	}
+
+	Future createNewDir(String name,[bool r]){
+            return new Future((){
+              var root = paths.join(this.options.get('path'),name);
+              this.checkLock(root);
+              var dir = GuardedDirectory.create(root,this.options.get('readonly'));
+              return dir.createDir(r).then((j){ return dir; });
+            });
+	}
+
+	dynamic createNewDirSync(String name,[bool r]){
+	    var root = paths.join(this.options.get('path'),name);
+            this.checkLock(root);
+            var dir = GuardedDirectory.create(root,this.options.get('readonly'));
+            dir.createDirSync(r);
+            return dir;
+	}
+
+	Future createTemp(String name){
+            if(!this.writable.on()) return null;
+            return this.d.createTemp(name);
+	}
+
+	dynamic createTempSync(String name){
+            if(!this.writable.on()) return null;
+            return this.d.createTempSync(name);
+	}
+
         void checkLock(String path){
           if(this.rootlocked.on()){
             if(paths.isWithin(this.options.get('path'),path)) return true;
@@ -258,7 +317,7 @@ class GuardedDirectory{
 
 	Future fsCheck(String path){
 		var real = paths.join(this.options.get('path'),path);
-		if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',real));
+		if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileNotFound('NOT FOUND!',real));
 		return new Future.value(real);
 	}
 
@@ -288,16 +347,6 @@ class GuardedDirectory{
 		return this.links.get(path).rename(newName);
 	}
 
-	dynamic createDirSync([bool f]){
-	    if(!this.writable.on() && !this.d.existsSync()) return this;
-	    this.d.create(recursive: Hub.switchUnless(f, true));
-	    return this;
-	}
-	  
-	Future createDir([bool f]){
-	    if(!this.writable.on() && !this.d.existsSync()) return new Future.value(this);
-	    return this.d.create(recursive:  Hub.switchUnless(f, true)).then((_){ return this; });
-	}
 	  
 	dynamic File(String path){
 	    var root = paths.join(this.options.get('path'),path);
@@ -335,31 +384,6 @@ class GuardedDirectory{
 	dynamic renameSync(String name){
 		if(!this.writable.on()) return null;
 		return this.d.rename(name);
-	}
-
-	Future createNewDir(String name,[bool r]){
-	    var root = paths.join(this.options.get('path'),name);
-            this.checkLock(root);
-            var dir = GuardedDirectory.create(root,this.options.get('readonly'));
-            return dir.createDir(r).then((j){ return dir; });
-	}
-
-	dynamic createNewDirSync(String name,[bool r]){
-	    var root = paths.join(this.options.get('path'),name);
-            this.checkLock(root);
-            var dir = GuardedDirectory.create(root,this.options.get('readonly'));
-            dir.createDirSync(r);
-            return dir;
-	}
-
-	Future createTemp(String name){
-            if(!this.writable.on()) return null;
-            return this.d.createTemp(name);
-	}
-
-	dynamic createTempSync(String name){
-            if(!this.writable.on()) return null;
-            return this.d.createTempSync(name);
 	}
 
 	Future delete([bool r]){
@@ -402,8 +426,28 @@ class GuardedFS{
   GuardedDirectory dir;
 
   static Future pathExists(String path){
-      if(FileSystemEntity.typeSync(path) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',path));
+      if(FileSystemEntity.typeSync(path) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileNotFound('NOT FOUND!',path));
       return new Future.value(path);
+  }
+
+  static Future isFile(String path){
+      var comp = new Completer();
+      GuardedFS.pathExists(path).then((_){
+        if(FileSystemEntity.typeSync(_) != FileSystemEntityType.FILE) return comp.completeError(new FileSystemException('NOT A File!',_));
+        return comp.complete(_);
+      },onError: (e){
+        comp.completeError(e);
+      }).catchError((e) => comp.completeError(e));
+      return comp.future;
+  }
+
+  static Future isDir(String path){
+      var comp = new Completer();
+      GuardedFS.pathExists(path).then((_){
+        if(FileSystemEntity.typeSync(_) != FileSystemEntityType.DIRECTORY) return comp.completeError(new FileSystemException('NOT A Directory!',_));
+        return comp.complete(_);
+      },onError: (e) => comp.completeError(e)).catchError((e) => comp.completeError(e));
+      return comp.future;
   }
 
   static create(p,r,[l]) => new GuardedFS(p,r,l);
@@ -421,7 +465,7 @@ class GuardedFS{
 
   Future fsCheck(String path){
     var real = paths.join(this.dir.path,path);
-    if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileSystemException('NOT FOUND!',real));
+    if(FileSystemEntity.typeSync(real) == FileSystemEntityType.NOT_FOUND) return new Future.error(new FileNotFound('NOT FOUND!',real));
     return new Future.value(real);
   }
   
